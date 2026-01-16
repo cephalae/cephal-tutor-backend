@@ -1,0 +1,54 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: laravel_app
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: medical_coding
+      DB_USERNAME: medical_coding_user
+      DB_PASSWORD: secret_password
+    depends_on:
+      - db
+    command: >
+      sh -lc "
+      composer install &&
+      php artisan key:generate --force &&
+      php artisan migrate --force &&
+      php artisan serve --host=0.0.0.0 --port=8000
+      "
+    networks:
+      - appnet
+
+  db:
+    image: postgres:16-alpine
+    container_name: postgres_db
+    ports:
+    - "6433:5432"
+    environment:
+      POSTGRES_DB: medical_coding
+      POSTGRES_USER: medical_coding_user
+      POSTGRES_PASSWORD: secret_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - appnet
+
+volumes:
+  pgdata:
+
+networks:
+  appnet:
+    driver: bridge
