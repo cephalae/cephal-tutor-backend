@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable implements JWTSubject
 {
@@ -68,5 +69,20 @@ class User extends Authenticatable implements JWTSubject
     public function getDefaultGuardName(): string
     {
         return $this->type === 'admin' ? 'admin_api' : 'provider_api';
+    }
+
+    public function categorySettings(): HasMany
+    {
+        return $this->hasMany(StudentCategorySetting::class, 'student_id');
+    }
+
+    public function recordAssignments(): HasMany
+    {
+        return $this->hasMany(StudentRecordAssignment::class, 'student_id');
+    }
+
+    public function recordAttempts(): HasMany
+    {
+        return $this->hasMany(StudentRecordAttempt::class, 'student_id');
     }
 }

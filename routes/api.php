@@ -2,9 +2,17 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\AdminAuthController;
+use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\Provider\ProviderAuthController;
 use App\Http\Controllers\Admin\ProviderController;
 use App\Http\Controllers\Admin\ProviderUserController;
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\UserRbacController;
+use App\Http\Controllers\Provider\ProviderUserManagementController;
+use App\Http\Controllers\Admin\StudentAssignmentController;
+use App\Http\Controllers\Provider\ProviderStudentAssignmentController;
+use App\Http\Controllers\Provider\StudentGameplayController;
 
 
 // -------- Admin Auth --------
@@ -28,13 +36,61 @@ Route::prefix('admin')->group(function () {
     });
 });
 
-// -------- Provider Auth --------
+
+
+Route::middleware('auth:admin_api')->prefix('admin')->group(function () {
+    Route::apiResource('roles', RoleController::class);
+    Route::get('permissions', [PermissionController::class, 'index']);
+    Route::apiResource('admin-users', AdminUserController::class);
+    Route::get('users/{user}/rbac', [UserRbacController::class, 'show']);
+    Route::put('users/{user}/roles', [UserRbacController::class, 'syncRoles']);
+    Route::post('users/{user}/roles', [UserRbacController::class, 'attachRoles']);
+    Route::delete('users/{user}/roles/{role}', [UserRbacController::class, 'detachRole']);
+
+    Route::put('students/{student}/category-settings', [StudentAssignmentController::class, 'upsertCategorySettings']);
+    Route::post('students/{student}/generate-assignments', [StudentAssignmentController::class, 'generateAssignments']);
+});
+
 Route::prefix('provider')->group(function () {
+
     Route::post('auth/login', [ProviderAuthController::class, 'login']);
 
     Route::middleware('auth:provider_api')->group(function () {
         Route::post('auth/logout', [ProviderAuthController::class, 'logout']);
         Route::post('auth/refresh', [ProviderAuthController::class, 'refresh']);
         Route::get('auth/me', [ProviderAuthController::class, 'me']);
+    });
+
+    Route::middleware('auth:provider_api')->group(function () {
+
+        // Provider admin / RBAC-based user management (scoped by provider_id)
+        Route::get('users', [ProviderUserManagementController::class, 'index'])
+            ->middleware('permission:provider_users.view');
+
+        Route::post('users', [ProviderUserManagementController::class, 'store'])
+            ->middleware('permission:provider_users.create');
+
+        Route::get('users/{user}', [ProviderUserManagementController::class, 'show'])
+            ->middleware('permission:provider_users.view');
+
+        Route::put('users/{user}', [ProviderUserManagementController::class, 'update'])
+            ->middleware('permission:provider_users.update');
+
+        Route::delete('users/{user}', [ProviderUserManagementController::class, 'destroy'])
+            ->middleware('permission:provider_users.delete');
+
+        Route::put('students/{student}/category-settings', [ProviderStudentAssignmentController::class, 'upsertCategorySettings'])
+            ->middleware('permission:provider_users.update');
+
+        Route::post('students/{student}/generate-assignments', [ProviderStudentAssignmentController::class, 'generateAssignments'])
+            ->middleware('permission:provider_users.update');
+
+        Route::get('my/categories', [StudentGameplayController::class, 'myCategories']);
+        Route::get('my/assignments', [StudentGameplayController::class, 'myAssignments']);
+
+        Route::get('assignments/{assignment}/question', [StudentGameplayController::class, 'question']);
+
+        Route::post('assignments/{assignment}/submit', [StudentGameplayController::class, 'submit'])
+            ->middleware('throttle:10,1');
     });
 });

@@ -19,6 +19,7 @@ class ProviderUserController extends Controller
         $paginator = $this->paginate(
             User::query()
                 ->where('provider_id', $provider->id)
+                ->where('type', $request->type)
                 ->latest(),
             $request
         );

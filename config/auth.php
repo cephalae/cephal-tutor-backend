@@ -14,8 +14,8 @@ return [
     */
 
     'defaults' => [
-        'guard' => env('admin_api'),
-        'passwords' => env('users'),
+        'guard' => 'admin_api',
+        'passwords' => 'users',
     ],
 
     /*
