@@ -13,6 +13,8 @@ use App\Http\Controllers\Provider\ProviderUserManagementController;
 use App\Http\Controllers\Admin\StudentAssignmentController;
 use App\Http\Controllers\Provider\ProviderStudentAssignmentController;
 use App\Http\Controllers\Provider\StudentGameplayController;
+use App\Http\Controllers\Provider\IcdLookupController;
+use App\Http\Controllers\Provider\StudentDashboardController;
 
 
 // -------- Admin Auth --------
@@ -55,13 +57,12 @@ Route::prefix('provider')->group(function () {
 
     Route::post('auth/login', [ProviderAuthController::class, 'login']);
 
+
     Route::middleware('auth:provider_api')->group(function () {
+
         Route::post('auth/logout', [ProviderAuthController::class, 'logout']);
         Route::post('auth/refresh', [ProviderAuthController::class, 'refresh']);
         Route::get('auth/me', [ProviderAuthController::class, 'me']);
-    });
-
-    Route::middleware('auth:provider_api')->group(function () {
 
         // Provider admin / RBAC-based user management (scoped by provider_id)
         Route::get('users', [ProviderUserManagementController::class, 'index'])
@@ -92,5 +93,16 @@ Route::prefix('provider')->group(function () {
 
         Route::post('assignments/{assignment}/submit', [StudentGameplayController::class, 'submit'])
             ->middleware('throttle:10,1');
+
+        Route::get('icd-lookup', [IcdLookupController::class, 'index'])
+            ->middleware('throttle:60,1');
+
+        Route::prefix('my/dashboard')->group(function () {
+            Route::get('summary', [StudentDashboardController::class, 'summary']);
+            Route::get('category-progress', [StudentDashboardController::class, 'categoryProgress']);
+            Route::get('activity', [StudentDashboardController::class, 'activity']);
+            Route::get('mistakes', [StudentDashboardController::class, 'mistakes']);
+            Route::get('recent-attempts', [StudentDashboardController::class, 'recentAttempts']);
+        });
     });
 });
