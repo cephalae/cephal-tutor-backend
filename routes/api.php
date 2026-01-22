@@ -17,6 +17,8 @@ use App\Http\Controllers\Provider\IcdLookupController;
 use App\Http\Controllers\Provider\StudentDashboardController;
 use App\Http\Controllers\Provider\ProviderAdminDashboardController;
 use App\Http\Controllers\Admin\AdminDashboardController;
+use App\Http\Controllers\Admin\AdminQuestionAssignController;
+use App\Http\Controllers\Provider\ProviderQuestionAssignController;
 
 
 // -------- Admin Auth --------
@@ -27,7 +29,7 @@ Route::prefix('admin')->group(function () {
         Route::post('auth/logout', [AdminAuthController::class, 'logout']);
         Route::post('auth/refresh', [AdminAuthController::class, 'refresh']);
         Route::get('auth/me', [AdminAuthController::class, 'me']);
-
+        Route::post('students/{student}/assign-all-questions', [AdminQuestionAssignController::class, 'assignAll']);
         // Providers CRUD
         Route::apiResource('providers', ProviderController::class);
 
@@ -100,7 +102,7 @@ Route::prefix('provider')->group(function () {
 
         Route::get('my/categories', [StudentGameplayController::class, 'myCategories']);
         Route::get('my/assignments', [StudentGameplayController::class, 'myAssignments']);
-
+        Route::post('students/{student}/assign-all-questions', [ProviderQuestionAssignController::class, 'assignAll']);
         Route::get('assignments/{assignment}/question', [StudentGameplayController::class, 'question']);
 
         Route::post('assignments/{assignment}/submit', [StudentGameplayController::class, 'submit']);

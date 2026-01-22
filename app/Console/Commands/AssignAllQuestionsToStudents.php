@@ -2,42 +2,74 @@
 
 namespace App\Console\Commands;
 
+use App\Imports\MedicalRecordsImport; // <-- change if your import class name differs
 use App\Models\MedicalRecord;
 use App\Models\StudentRecordAssignment;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class AssignAllQuestionsToStudents extends Command
 {
     protected $signature = 'assign:all-questions
         {--provider_id= : Only assign for students within this provider_id}
+        {--student_id= : Assign only for this single student_id}
         {--category_id= : Only assign questions in this category_id}
         {--include-inactive : Include inactive medical_records}
         {--max_attempts=3 : Max attempts per assignment}
         {--dry-run : Show what would happen without writing}
         {--chunk=500 : Chunk size for processing}
+        {--from-imports : Import XLSX files from storage/app/imports/questions then assign}
     ';
 
-    protected $description = 'Assign all questions (medical_records) to all students, skipping duplicates.';
+    protected $description = 'Assign all questions (medical_records) to students, skipping duplicates. Optionally import from XLSX folder first.';
 
     public function handle(): int
     {
         $providerId = $this->option('provider_id') ? (int) $this->option('provider_id') : null;
+        $studentId  = $this->option('student_id') ? (int) $this->option('student_id') : null;
         $categoryId = $this->option('category_id') ? (int) $this->option('category_id') : null;
+
         $includeInactive = (bool) $this->option('include-inactive');
         $maxAttempts = (int) $this->option('max_attempts');
         $dryRun = (bool) $this->option('dry-run');
         $chunk = max(50, (int) $this->option('chunk'));
+        $fromImports = (bool) $this->option('from-imports');
 
         if ($maxAttempts < 1 || $maxAttempts > 10) {
             $this->error('max_attempts must be between 1 and 10');
             return self::FAILURE;
         }
 
-        // Build question bank query
-        $recordsQuery = MedicalRecord::query()
-            ->select(['id', 'category_id']);
+        // Validate student/provider combination early
+        if ($studentId) {
+            $student = User::query()
+                ->where('id', $studentId)
+                ->where('type', 'student')
+                ->first();
+
+            if (!$student) {
+                $this->error("Student not found: {$studentId}");
+                return self::FAILURE;
+            }
+
+            if ($providerId && (int)$student->provider_id !== (int)$providerId) {
+                $this->error("student_id {$studentId} does not belong to provider_id {$providerId}");
+                return self::FAILURE;
+            }
+        }
+
+        // Optionally import XLSX files from storage/app/imports/questions
+        if ($fromImports) {
+            $ok = $this->importFromQuestionsFolder($dryRun);
+            if (!$ok) return self::FAILURE;
+        }
+
+        // Build question bank query (from DB medical_records)
+        $recordsQuery = MedicalRecord::query()->select(['id', 'category_id']);
 
         if (!$includeInactive) {
             $recordsQuery->where('is_active', true);
@@ -48,7 +80,6 @@ class AssignAllQuestionsToStudents extends Command
         }
 
         $totalRecords = (clone $recordsQuery)->count();
-
         if ($totalRecords === 0) {
             $this->warn('No medical records found for the given filters.');
             return self::SUCCESS;
@@ -63,8 +94,11 @@ class AssignAllQuestionsToStudents extends Command
             $studentsQuery->where('provider_id', $providerId);
         }
 
-        $totalStudents = (clone $studentsQuery)->count();
+        if ($studentId) {
+            $studentsQuery->where('id', $studentId);
+        }
 
+        $totalStudents = (clone $studentsQuery)->count();
         if ($totalStudents === 0) {
             $this->warn('No students found for the given filters.');
             return self::SUCCESS;
@@ -80,7 +114,6 @@ class AssignAllQuestionsToStudents extends Command
         $bar = $this->output->createProgressBar($totalStudents);
         $bar->start();
 
-        // Chunk students
         $studentsQuery->orderBy('id')->chunkById($chunk, function ($students) use (
             $recordsQuery,
             $maxAttempts,
@@ -90,7 +123,7 @@ class AssignAllQuestionsToStudents extends Command
             $bar
         ) {
             foreach ($students as $student) {
-                // For performance: prefetch already assigned record ids for this student (filtered by same record query)
+                // Pull existing assignments for this student (avoid duplicates)
                 $assignedIds = StudentRecordAssignment::query()
                     ->where('student_id', $student->id)
                     ->pluck('medical_record_id')
@@ -98,7 +131,6 @@ class AssignAllQuestionsToStudents extends Command
 
                 $assignedSet = array_flip($assignedIds);
 
-                // Iterate all records in chunks too
                 (clone $recordsQuery)->orderBy('id')->chunkById(1000, function ($records) use (
                     $student,
                     $maxAttempts,
@@ -133,13 +165,12 @@ class AssignAllQuestionsToStudents extends Command
                         ];
                     }
 
-                    // Bulk insert, ignore duplicates safely (in case of race)
                     if (!$dryRun && !empty($rowsToInsert)) {
-                        // Postgres supports insertOrIgnore via Laravel
                         StudentRecordAssignment::query()->insertOrIgnore($rowsToInsert);
                         $createdTotal += count($rowsToInsert);
                     }
                 });
+
                 $bar->advance();
             }
         });
@@ -152,5 +183,49 @@ class AssignAllQuestionsToStudents extends Command
         $this->info("Skipped (already existed): {$skippedTotal}");
 
         return self::SUCCESS;
+    }
+
+    private function importFromQuestionsFolder(bool $dryRun): bool
+    {
+        $dir = storage_path('app/imports/questions');
+
+        if (!File::exists($dir)) {
+            $this->error("Questions folder not found: {$dir}");
+            $this->line("Create it and place .xlsx files inside: storage/app/imports/questions");
+            return false;
+        }
+
+        $files = collect(File::files($dir))
+            ->filter(fn($f) => strtolower($f->getExtension()) === 'xlsx')
+            ->values();
+
+        if ($files->isEmpty()) {
+            $this->warn("No .xlsx files found in: {$dir}");
+            return true; // not a failure; just nothing to import
+        }
+
+        $this->info("Found {$files->count()} XLSX file(s) in imports/questions");
+
+        foreach ($files as $file) {
+            $path = $file->getPathname();
+            $this->line("Importing: {$path}");
+            $sheetNames = IOFactory::load($path)->getSheetNames();
+
+            if ($dryRun) {
+                $this->line("DRY RUN: skipping import for {$file->getFilename()}");
+                continue;
+            }
+
+            try {
+                // Import supports multiple sheets via your existing import
+                Excel::import(new MedicalRecordsImport($sheetNames, $deactivateMissing ?? false), $path);
+            } catch (\Throwable $e) {
+                $this->error("Import failed for {$file->getFilename()}: " . $e->getMessage());
+                return false;
+            }
+        }
+
+        $this->info("Imports completed.");
+        return true;
     }
 }
