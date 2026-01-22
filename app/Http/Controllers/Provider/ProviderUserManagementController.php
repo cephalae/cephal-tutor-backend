@@ -29,15 +29,57 @@ class ProviderUserManagementController extends Controller
             return $this->fail('Provider context missing', null, 403);
         }
 
+        $allowedTypes = ['provider_admin', 'student', 'provider_user'];
+
+        // Only allow sorting by safe columns
+        $allowedSorts = ['created_at', 'name', 'email', 'username', 'mobile', 'type'];
+
+        $data = $request->validate([
+            'type' => ['nullable', 'in:' . implode(',', $allowedTypes)],
+            'types' => ['nullable', 'array', 'min:1'],
+            'types.*' => ['in:' . implode(',', $allowedTypes)],
+
+            'q' => ['nullable', 'string', 'max:100'],
+
+            'sort' => ['nullable', 'in:' . implode(',', $allowedSorts)],
+            'direction' => ['nullable', 'in:asc,desc'],
+        ]);
+
         $query = User::query()
             ->where('provider_id', $me->provider_id)
-            ->whereIn('type', ['provider_admin', 'student', 'provider_user'])
-            ->latest();
+            ->whereIn('type', $allowedTypes);
+
+        // Filters
+        if (!empty($data['type'])) {
+            $query->where('type', $data['type']);
+        }
+
+        if (!empty($data['types'])) {
+            $query->whereIn('type', $data['types']);
+        }
+
+        if (!empty($data['q'])) {
+            $q = trim($data['q']);
+            $query->where(function ($qq) use ($q) {
+                $qq->where('name', 'ilike', "%{$q}%")
+                   ->orWhere('email', 'ilike', "%{$q}%")
+                   ->orWhere('username', 'ilike', "%{$q}%")
+                   ->orWhere('mobile', 'ilike', "%{$q}%");
+            });
+        }
+
+        // Sorting (default: created_at desc)
+        $sort = $data['sort'] ?? 'created_at';
+        $direction = $data['direction'] ?? 'desc';
+
+        $query->orderBy($sort, $direction);
 
         $paginator = $this->paginate($query, $request);
 
         return $this->ok($paginator, 'Provider users');
     }
+
+
 
     /**
      * POST /api/provider/users

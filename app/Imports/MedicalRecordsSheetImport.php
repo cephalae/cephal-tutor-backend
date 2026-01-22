@@ -12,6 +12,8 @@ use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Events\BeforeSheet;
+use Faker\Factory as FakerFactory;
+use Faker\Generator as Faker;
 
 class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEvents
 {
@@ -19,10 +21,13 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
     private ?MedicalRecord $currentRecord = null;
     private int $currentSort = 1;
     private array $seenRecordUids = [];
+    private Faker $faker;
 
     public function __construct(
         private readonly bool $deactivateMissing = false
-    ) {}
+    ) {
+        $this->faker = FakerFactory::create('en_US');
+    }
 
     public function registerEvents(): array
     {
@@ -67,13 +72,13 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
                     $this->currentSort = 1;
 
                     $uid = $this->makeSourceUid($category->id, $row);
-
+                    $fakerName = $this->makeFakerPatientName($row['gender']);
                     $this->currentRecord = MedicalRecord::updateOrCreate(
                         ['source_uid' => $uid],
                         [
                             'category_id' => $category->id,
                             'source_uid' => $uid,
-                            'patient_name' => $row['patient_name'] ?: null,
+                            'patient_name' => $fakerName,
                             'age' => $row['age'] !== null ? (int) $row['age'] : null,
                             'gender' => $row['gender'] ?: null,
                             'chief_complaints' => $row['chief_complaints'] ?: null,
@@ -129,6 +134,21 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
                 'sort_order' => $this->currentSort++,
             ]
         );
+    }
+
+    private function makeFakerPatientName(?string $gender): string
+    {
+        $g = strtoupper(trim((string) $gender));
+
+        if (in_array($g, ['M', 'MALE'], true)) {
+            return $this->faker->firstNameMale() . ' ' . $this->faker->lastName();
+        }
+
+        if (in_array($g, ['F', 'FEMALE'], true)) {
+            return $this->faker->firstNameFemale() . ' ' . $this->faker->lastName();
+        }
+
+        return $this->faker->firstName() . ' ' . $this->faker->lastName();
     }
 
     private function makeSourceUid(int $categoryId, array $row): string
