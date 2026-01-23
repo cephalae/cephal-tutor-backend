@@ -19,6 +19,14 @@ use App\Http\Controllers\Provider\ProviderAdminDashboardController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AdminQuestionAssignController;
 use App\Http\Controllers\Provider\ProviderQuestionAssignController;
+use App\Http\Controllers\Auth\UnifiedAuthController;
+
+
+//Unified login
+Route::prefix('auth')->group(function () {
+    Route::post('login', [UnifiedAuthController::class, 'login']);
+    Route::post('refresh', [UnifiedAuthController::class, 'refresh']);
+});
 
 
 // -------- Admin Auth --------
