@@ -8,6 +8,7 @@ use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Notifications\ResetPasswordViaGraph;
 
 class User extends Authenticatable implements JWTSubject
 {
@@ -70,6 +71,14 @@ class User extends Authenticatable implements JWTSubject
     {
         return $this->type === 'admin' ? 'admin_api' : 'provider_api';
     }
+
+
+
+    public function sendPasswordResetNotification($token)
+    {
+        $this->notify(new ResetPasswordViaGraph($token));
+    }
+
 
     public function categorySettings(): HasMany
     {

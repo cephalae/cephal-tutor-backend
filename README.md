@@ -12,6 +12,8 @@ Add diagnosis code with category
 
 php artisan diagnosis:import
 
+php artisan record-categories:fix-names-regex
+
 
 
 Assign all active questions to all students:

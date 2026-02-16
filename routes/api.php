@@ -22,12 +22,16 @@ use App\Http\Controllers\Provider\ProviderQuestionAssignController;
 use App\Http\Controllers\Auth\UnifiedAuthController;
 use App\Http\Controllers\Provider\DiagnosisCategoryController;
 use App\Http\Controllers\Provider\DiagnosisSearchController;
+use App\Http\Controllers\Api\Auth\ForgotPasswordController;
+use App\Http\Controllers\Api\Auth\ResetPasswordController;
 
 
 //Unified login
 Route::prefix('auth')->group(function () {
     Route::post('login', [UnifiedAuthController::class, 'login']);
     Route::post('refresh', [UnifiedAuthController::class, 'refresh']);
+    Route::post('/forgot-password', [ForgotPasswordController::class, 'send'])->middleware('throttle:5,1');
+    Route::post('/reset-password', [ResetPasswordController::class, 'reset'])->middleware('throttle:5,1');
 });
 
 
