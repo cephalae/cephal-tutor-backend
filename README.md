@@ -8,6 +8,11 @@ for i in $(seq 1 21); do
 done
 ```
 
+Add diagnosis code with category
+
+php artisan diagnosis:import
+
+
 
 Assign all active questions to all students:
 
