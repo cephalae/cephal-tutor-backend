@@ -20,6 +20,8 @@ use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AdminQuestionAssignController;
 use App\Http\Controllers\Provider\ProviderQuestionAssignController;
 use App\Http\Controllers\Auth\UnifiedAuthController;
+use App\Http\Controllers\Provider\DiagnosisCategoryController;
+use App\Http\Controllers\Provider\DiagnosisSearchController;
 
 
 //Unified login
@@ -114,10 +116,17 @@ Route::prefix('provider')->group(function () {
         Route::get('assignments/{assignment}/question', [StudentGameplayController::class, 'question']);
 
         Route::post('assignments/{assignment}/submit', [StudentGameplayController::class, 'submit']);
-            // ->middleware('throttle:10,1');
+        // ->middleware('throttle:10,1');
 
         Route::get('icd-lookup', [IcdLookupController::class, 'index'])
             ->middleware('throttle:60,1');
+
+        // Tree browsing (unlimited nesting)
+        Route::get('/diagnosis-categories', [DiagnosisCategoryController::class, 'index']);                 // children by parent_id
+        Route::get('/diagnosis-categories/{id}/codes', [DiagnosisCategoryController::class, 'codes']);     // codes under category
+
+        // Unified search (categories + codes)
+        Route::get('/diagnosis-search', [DiagnosisSearchController::class, 'index']);
 
         Route::prefix('my/dashboard')->group(function () {
             Route::get('summary', [StudentDashboardController::class, 'summary']);

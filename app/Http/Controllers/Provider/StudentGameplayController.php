@@ -186,15 +186,20 @@ class StudentGameplayController extends Controller
             ->where('is_required', true)
             ->get(['code', 'comment_wrong', 'comment_missing']);
 
-        $expected = $expectedRows->pluck('code')->map(fn($c) => strtoupper(trim($c)))->unique()->values();
+        $expected = $expectedRows->pluck('code')
+            ->map(fn($c) => strtoupper(trim($c)))
+            ->unique()
+            ->values();
 
         // Compare sets
+        $correct = $submitted->intersect($expected)->values();
         $wrong = $submitted->diff($expected)->values();
         $missing = $expected->diff($submitted)->values();
 
         $isCorrect = $wrong->isEmpty() && $missing->isEmpty();
+        $partialCorrect = !$isCorrect && $correct->isNotEmpty(); // ✅ NEW
 
-        return DB::transaction(function () use ($assignment, $me, $submitted, $wrong, $missing, $isCorrect, $expectedRows) {
+        return DB::transaction(function () use ($assignment, $me, $submitted, $correct, $wrong, $missing, $isCorrect, $partialCorrect, $expectedRows, $expected) {
 
             // increment attempts
             $nextAttemptNo = $assignment->attempts_used + 1;
@@ -227,9 +232,7 @@ class StudentGameplayController extends Controller
             // Build feedback (comments per wrong/missing code)
             $byCode = $expectedRows->keyBy(fn($r) => strtoupper(trim($r->code)));
 
-            $wrongFeedback = $wrong->map(function ($code) use ($byCode) {
-                // wrong code isn't expected, so no per-code comment exists.
-                // We'll return a generic message; you can enhance later.
+            $wrongFeedback = $wrong->map(function ($code) {
                 return [
                     'code' => $code,
                     'comment' => 'The entered code is not correct for this record.',
@@ -245,10 +248,8 @@ class StudentGameplayController extends Controller
             })->values();
 
             // If wrong exists, show the "comment_wrong" for the record’s codes.
-            // Your sheet has comment_wrong column per expected code; we can return a consolidated message:
             $wrongComment = null;
             if (!$wrong->isEmpty()) {
-                // pick first non-empty comment_wrong from any expected code row
                 $wrongComment = $expectedRows->pluck('comment_wrong')->filter()->first()
                     ?: 'One or more codes are incorrect.';
             }
@@ -256,6 +257,7 @@ class StudentGameplayController extends Controller
             return $this->ok([
                 'result' => [
                     'is_correct' => $isCorrect,
+                    'partial_correct' => $partialCorrect,
                     'status' => $assignment->status,
                     'attempts_used' => $assignment->attempts_used,
                     'max_attempts' => $assignment->max_attempts,
@@ -263,8 +265,9 @@ class StudentGameplayController extends Controller
                 ],
                 'submitted_codes' => $submitted->all(),
                 'feedback' => [
+                    'correct_codes' => $isCorrect ? $expected->all() : $correct->all(),
                     'wrong_codes' => $wrong->all(),
-                    'missing_codes' => $missing->all(),
+                    // 'missing_codes' => $missing->all(),
                     'wrong_comment' => $wrongComment,
                     'wrong_details' => $wrongFeedback,
                     'missing_details' => $missingFeedback,
@@ -272,4 +275,5 @@ class StudentGameplayController extends Controller
             ], $isCorrect ? 'Correct' : 'Incorrect');
         });
     }
+
 }

@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Provider;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\ApiResponds;
 use App\Http\Controllers\Concerns\WithPerPagePagination;
-use App\Models\MedicalRecordCode;
+use App\Models\DiagnosisCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -16,8 +16,8 @@ class IcdLookupController extends Controller
     /**
      * GET /api/provider/icd-lookup?q=J15&page=1&per_page=20
      *
-     * Returns DISTINCT ICD codes from your answer-key table,
-     * but does NOT expose record_id / comments / mapping back to cases.
+     * Returns DISTINCT diagnosis codes from diagnosis_codes,
+     * does NOT expose any mappings back to cases.
      */
     public function index(Request $request)
     {
@@ -31,29 +31,27 @@ class IcdLookupController extends Controller
             'q' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $query = MedicalRecordCode::query()
-            ->selectRaw('code, max(description) as description')
+        $query = DiagnosisCode::query()
+            ->selectRaw('code, max(long_description) as description, max(short_description) as short_description')
             ->groupBy('code')
             ->orderBy('code');
 
         if (!empty($data['q'])) {
             $q = trim($data['q']);
-
-            // Postgres: case-insensitive search
             $query->where(function ($qq) use ($q) {
                 $qq->where('code', 'ilike', "%{$q}%")
-                   ->orWhere('description', 'ilike', "%{$q}%");
+                   ->orWhere('long_description', 'ilike', "%{$q}%")
+                   ->orWhere('short_description', 'ilike', "%{$q}%");
             });
         }
 
-        // Paginate the grouped results
         $paginator = $this->paginate($query, $request);
 
-        // Ensure response contains only safe fields
         $paginator->getCollection()->transform(function ($row) {
             return [
                 'code' => $row->code,
                 'description' => $row->description,
+                'short_description' => $row->short_description,
             ];
         });
 
