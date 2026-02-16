@@ -41,7 +41,6 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
     public function collection(Collection $rows)
     {
         if ($this->categoryName === '') {
-            // fallback safety
             $this->categoryName = 'Uncategorized';
         }
 
@@ -52,13 +51,12 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
                 ['name' => $this->categoryName, 'slug' => Str::slug($this->categoryName)]
             );
 
-            // Track seen UIDs for optional deactivate-missing logic per category
             $this->seenRecordUids = [];
+            $this->currentRecord = null;
 
             foreach ($rows as $row) {
                 $row = $this->normalizeRow($row);
 
-                // Skip completely empty rows
                 if ($this->isEmptyRow($row)) {
                     continue;
                 }
@@ -67,12 +65,16 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
                 $hasChief = !empty($row['chief_complaints']);
                 $hasIcd = !empty($row['icd_10_am_code']);
 
-                // New record starts when patient_name exists OR when chief complaints exist and we have no current
+                // Start new record
                 if ($hasPatientName || ($hasChief && $this->currentRecord === null)) {
                     $this->currentSort = 1;
 
-                    $uid = $this->makeSourceUid($category->id, $row);
+                    $difficulty = $this->parseDifficultyLevel($row['difficulty_level']) ?? 1;
+
+                    $uid = $this->makeSourceUid($category->id, $row, $difficulty);
+
                     $fakerName = $this->makeFakerPatientName($row['gender']);
+
                     $this->currentRecord = MedicalRecord::updateOrCreate(
                         ['source_uid' => $uid],
                         [
@@ -83,13 +85,13 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
                             'gender' => $row['gender'] ?: null,
                             'chief_complaints' => $row['chief_complaints'] ?: null,
                             'case_description' => $row['case_description'] ?: null,
+                            'difficulty_level' => $difficulty,
                             'is_active' => true,
                         ]
                     );
 
                     $this->seenRecordUids[] = $uid;
 
-                    // If the same row also has an ICD code, attach it
                     if ($hasIcd) {
                         $this->upsertCode($this->currentRecord, $row);
                     }
@@ -97,14 +99,11 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
                     continue;
                 }
 
-                // Continuation row: patient_name blank but icd exists => additional code for previous record
+                // Continuation row => additional code for previous record
                 if (!$hasPatientName && $hasIcd && $this->currentRecord) {
                     $this->upsertCode($this->currentRecord, $row);
                     continue;
                 }
-
-                // If row doesn't match patterns, ignore safely
-                // (or log it if you want)
             }
 
             if ($this->deactivateMissing) {
@@ -151,11 +150,11 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
         return $this->faker->firstName() . ' ' . $this->faker->lastName();
     }
 
-    private function makeSourceUid(int $categoryId, array $row): string
+    private function makeSourceUid(int $categoryId, array $row, int $difficulty): string
     {
-        // Stable UID: same file imported again = same UID, no duplicate records
         $payload = implode('|', [
             $categoryId,
+            $difficulty,
             trim((string) ($row['patient_name'] ?? '')),
             trim((string) ($row['age'] ?? '')),
             trim((string) ($row['gender'] ?? '')),
@@ -166,17 +165,29 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
         return hash('sha256', $payload);
     }
 
+    private function parseDifficultyLevel(?string $value): ?int
+    {
+        if ($value === null) return null;
+
+        $v = strtolower(trim($value));
+        // supports: "Level 1", "lvl 2", "3"
+        if (preg_match('/\b([123])\b/', $v, $m)) {
+            return (int) $m[1];
+        }
+        return null;
+    }
+
     private function normalizeRow($row): array
     {
-        // WithHeadingRow gives $row as array-like with snake_case keys.
-        // Normalize/alias expected keys.
         $arr = is_array($row) ? $row : $row->toArray();
 
-        // Common header variants you might have
-        $patient = $arr['patient_name'] ?? $arr['patient_name_'] ?? $arr['patient'] ?? null;
-        $chief   = $arr['chief_complaints'] ?? $arr['chief_complaints_'] ?? $arr['chief_complaint'] ?? null;
+        $patient = $arr['patient_name'] ?? $arr['patient'] ?? null;
+        $chief   = $arr['chief_complaints'] ?? $arr['chief_complaint'] ?? null;
 
         return [
+            // NEW
+            'difficulty_level' => $this->clean($arr['levels'] ?? $arr['level'] ?? $arr['difficulty_level'] ?? null),
+
             'patient_name' => $this->clean($patient),
             'age' => $this->clean($arr['age'] ?? null),
             'gender' => $this->clean($arr['gender'] ?? null),
@@ -203,6 +214,7 @@ class MedicalRecordsSheetImport implements ToCollection, WithHeadingRow, WithEve
         return empty($row['patient_name'])
             && empty($row['chief_complaints'])
             && empty($row['icd_10_am_code'])
-            && empty($row['description']);
+            && empty($row['description'])
+            && empty($row['difficulty_level']);
     }
 }

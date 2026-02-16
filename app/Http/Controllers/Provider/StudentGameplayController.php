@@ -74,28 +74,40 @@ class StudentGameplayController extends Controller
         $data = $request->validate([
             'category_id' => ['nullable', 'integer', 'exists:record_categories,id'],
             'status' => ['nullable', 'in:assigned,completed,locked'],
+            'difficulty_level' => ['nullable', 'integer', 'in:1,2,3'],
         ]);
 
         $query = StudentRecordAssignment::query()
-            ->where('student_id', $me->id)
+            ->where('student_record_assignments.student_id', $me->id)
+            ->join('medical_records as mr', 'mr.id', '=', 'student_record_assignments.medical_record_id')
+            ->select('student_record_assignments.*')
             ->with([
-                'medicalRecord:id,category_id,patient_name,age,gender,chief_complaints,case_description,is_active',
+                'medicalRecord:id,category_id,patient_name,age,gender,chief_complaints,case_description,difficulty_level,is_active',
                 'category:id,name,slug',
             ])
-            ->orderByDesc('id');
+            // ✅ ORDER: Level 1, then Level 2, then Level 3
+            ->orderBy('mr.difficulty_level', 'asc')
+            // secondary stable ordering inside each level
+            ->orderByDesc('student_record_assignments.id');
 
         if (!empty($data['category_id'])) {
-            $query->where('category_id', (int) $data['category_id']);
+            $query->where('student_record_assignments.category_id', (int) $data['category_id']);
         }
 
         if (!empty($data['status'])) {
-            $query->where('status', $data['status']);
+            $query->where('student_record_assignments.status', $data['status']);
+        }
+
+        if (!empty($data['difficulty_level'])) {
+            $query->where('mr.difficulty_level', (int) $data['difficulty_level']);
         }
 
         $paginator = $this->paginate($query, $request);
 
         return $this->ok($paginator, 'My assignments');
     }
+
+
 
     /**
      * GET /api/provider/assignments/{assignment}/question

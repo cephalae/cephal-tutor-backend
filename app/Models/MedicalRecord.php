@@ -16,13 +16,14 @@ class MedicalRecord extends Model
         'gender',
         'chief_complaints',
         'case_description',
+        'difficulty_level',
         'is_active',
     ];
-
 
     protected $casts = [
         'is_active' => 'boolean',
         'age' => 'integer',
+        'difficulty_level' => 'integer',
     ];
 
     public function category(): BelongsTo
