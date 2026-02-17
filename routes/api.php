@@ -122,6 +122,8 @@ Route::prefix('provider')->group(function () {
         Route::post('assignments/{assignment}/submit', [StudentGameplayController::class, 'submit']);
         // ->middleware('throttle:10,1');
 
+        Route::get('/assignments/{assignment}/correct-answers', [StudentGameplayController::class, 'correctAnswers']);
+
         Route::get('icd-lookup', [IcdLookupController::class, 'index'])
             ->middleware('throttle:60,1');
 

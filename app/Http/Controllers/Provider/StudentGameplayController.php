@@ -288,4 +288,40 @@ class StudentGameplayController extends Controller
         });
     }
 
+    public function correctAnswers(StudentRecordAssignment $assignment)
+    {
+        $me = Auth::guard('provider_api')->user();
+
+        // Only students
+        if ($me->type !== 'student') {
+            return $this->fail('Only students can access this endpoint', null, 403);
+        }
+
+        // Must be their assignment
+        if ((int) $assignment->student_id !== (int) $me->id) {
+            return $this->fail('Not found', null, 404);
+        }
+
+        // Only after completion
+        if ($assignment->status !== 'completed') {
+            return $this->fail('Correct answers are available only after completion.', null, 409);
+        }
+
+        $correctCodes = MedicalRecordCode::query()
+            ->where('medical_record_id', $assignment->medical_record_id)
+            ->where('is_required', true)
+            ->orderBy('sort_order') // keep your intended sequence
+            ->pluck('code')
+            ->map(fn($c) => strtoupper(trim((string) $c)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return $this->ok([
+            'assignment_id' => $assignment->id,
+            'medical_record_id' => $assignment->medical_record_id,
+            'correct_codes' => $correctCodes,
+        ], 'Correct answers');
+    }
 }
